@@ -1,0 +1,282 @@
+# Documentation
+
+## Overview
+
+This project aims to redesign the current water tank monitoring system in residential homes, providing an all-in-one solution for monitoring, detecting, and alerting users of leakages, whilst also supplying a real-time monitoring of the water levels in the tank. The project is designed to be low-cost, sustainable, and user-friendly.  
+The project is built on the principles of **sustainability**, **innovation**, and **accessibility**
+
+## Features
+
+- **Water Level Monitoring**: The system provides real-time monitoring of the water levels in the tank.
+- **Leakage Detection**: The system detects leakages in the tank and alerts the user.
+- **User-friendly Interface**: The system is designed to be user-friendly and easy to use.
+- **Low-cost**: The system is designed to be low-cost and affordable.
+- **Sustainable**: The system is built on the principles of sustainability and aims to contribute to the sustainable development goals.
+
+## Components & Technologies Used
+
+### Hardware Components
+
+- **R3CH340 Microcontroller (Arduino Nano)**: Used for controlling the system.
+- **HC-SR04-Ultrasonic Sensor**: Used for water level monitoring.
+- **YFS201 Water Flow Sensor**: Used for detecting leakages.
+- **433Mhz RF Transmitter & Receiver**: Used for real-time monitoring.
+- **16x2 LCD Display**: Used for displaying the water levels and alerts.
+- **LEDs**: Used for indicating the water levels at different stages.
+
+### Software Technologies
+
+- **Arduino IDE**: Used for programming the Arduino Nano.
+- **Next.js + Nextra**: Used for building the documentation website.
+
+## Mechanism
+
+The entire system is divided into two parts/modules:
+
+- **Transmitter Module**
+- **Receiver Module**
+
+### Transmitter Module
+
+The transmitter module consists of 1 HC-SR04 Ultrasonic Sensor, and an Arduino Nano. The HC-SR04 sensor is used for monitoring the water levels in the tank and the Arduino Nano processes the data from the sensors and transmits it to the receiver module using the 433Mhz RF Transmitter. This module is installed inside the water tank and is powered by a 9V battery.
+
+A similar transmitter module is used for the leakage detection. The YFS201 Water Flow Sensor is set up with a pre-calculated range of flow rates. If the flow rate exceeds this range, the sensor interfaces with the Arduino Nano, which then transmits the data to the receiver module, using the same 433Mhz RF Transmitter.
+
+### Receiver Module
+
+This module is intended to work as a separate 'appliance' consisting of an Arduino Nano, 2 433Mhz RF Receivers (1 each for water level monitoring and leakage detection), a 16x2 LCD Display and a few LED's for alerts. The 433Mhz receiver receives the data transmitted by the transmitter module and the Arduino Nano processes the data and displays it on the 16x2 LCD Display. A green LED is used to indicate when the tank is completely filled and a red LED is used to indicate when the tank is empty.
+
+A similar approach is taken for the leakage detection. The Arduino Nano processes the data received from the transmitter module and alerts the user in the 16x2 LCD Display.
+
+## Codebase
+
+### Water level monitoring
+
+```cpp filename="transmitter.ino"
+#include <RH_ASK.h>
+#include <SPI.h> // Not used, but needed to compile
+
+
+#define TRIG_PIN 4
+#define ECHO_PIN 5
+#define TANK_HEIGHT 10 // Adjust according to your tank height in cm
+#define SENSOR_OFFSET 2 // Adjust according to the sensor position
+
+
+RH_ASK driver(2000, 2, 2, 0); //tx and rx pins
+
+
+void setup() {
+  Serial.begin(9600);
+  if (!driver.init()) {
+    Serial.println("RF initialization failed!");
+    while (1);
+  }
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+}
+
+
+void loop() {
+  // Measure distance using SR04
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+  long duration = pulseIn(ECHO_PIN, HIGH);
+  int distance = duration * 0.034 / 2;
+
+  // Calculate water level as a percentage
+  int waterLevel = TANK_HEIGHT - distance + SENSOR_OFFSET;
+  int waterLevelPercentage = (waterLevel * 100) / TANK_HEIGHT;
+  if (waterLevelPercentage > 100) waterLevelPercentage = 100;
+  if (waterLevelPercentage < 0) waterLevelPercentage = 0;
+
+
+  // Create a data string
+  char data[20];
+  sprintf(data, "%d", waterLevelPercentage);
+
+
+  // Transmit data
+  driver.send((uint8_t *)data, strlen(data));
+  driver.waitPacketSent();
+
+
+  Serial.print("Water Level: ");
+  Serial.print(waterLevelPercentage);
+  Serial.println("%");
+
+
+  delay(100);
+}
+```
+
+### Leakage Detection
+
+```cpp filename="leakage.ino"
+#include <RH_ASK.h>
+#include <SPI.h>
+
+// Define the pin for the water flow sensor signal
+#define FLOW_SENSOR_PIN 2
+
+RH_ASK driver(2000, 2, 12, 0);
+
+// Variables to store the flow data
+volatile int pulseCount = 0;  // Counts the pulses from the sensor
+float flowRate = 0.0;         // Flow rate in L/min
+unsigned long previousMillis = 0;
+const long interval = 1000;   // Interval for updating flow rate in milliseconds
+
+// Calibration factor for YFS201 sensor (this is an approximation)
+const float calibrationFactor = 4.5; // This may need to be adjusted for your specific setup
+
+// Interrupt Service Routine to count pulses
+void pulseCounter() {
+  pulseCount++;
+}
+
+void setup() {
+  // Start serial communication for monitoring
+  Serial.begin(9600);
+  if (!driver.init()) {
+    Serial.println("RF initialization failed!");
+    while (1);
+  }
+  // Set the flow sensor pin as input
+  pinMode(FLOW_SENSOR_PIN, INPUT);
+
+  // Attach interrupt to the flow sensor pin (counts pulses on the rising edge)
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, RISING);
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+
+  // Every 1 second, calculate the flow rate
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    // Calculate flow rate in liters per minute
+    flowRate = (pulseCount / calibrationFactor);  // Simple calculation for flow in L/min
+    pulseCount = 0;  // Reset pulse count for the next interval
+
+    char data[20];
+    sprintf(data, "%d", flowRate);
+
+    driver.send((uint8_t *)data, strlen(data));
+    driver.waitPacketSent();
+
+    // Print the flow rate to the serial monitor
+    Serial.print("Flow rate: ");
+    Serial.print(flowRate);
+    Serial.println(" L/min");
+
+    delay(100);
+  }
+}
+```
+### Receiver
+
+```cpp filename="receiver.ino"
+#include <RH_ASK.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#define LED_FULL_PIN 6
+#define LED_EMPTY_PIN 4
+#define FULL_LEVEL 100
+#define LOW_LEVEL_THRESHOLD 10
+#define DISCONNECTED_MSG "  Disconnected"
+#define RATE_DEAD_MSG "  Rate ded"
+#define I2C_ADDRESS 0x3F
+#define DELAY_TIME 500
+
+// RH_ASK drivers with unique pin configurations
+RH_ASK driver(2000, 3, 2, 0); // TX on pin 3, RX on pin 2
+RH_ASK driver1(2000, 4, 12, 0); // TX on pin 4, RX on pin 12
+
+LiquidCrystal_I2C lcd(I2C_ADDRESS, 16, 2); // Adjust the I2C address for your display
+
+void setup() {
+    Serial.begin(9600);
+    lcd.init();
+    lcd.backlight();
+
+    pinMode(LED_FULL_PIN, OUTPUT);
+    pinMode(LED_EMPTY_PIN, OUTPUT);
+
+    if (!driver.init()) {
+        Serial.println("Driver 1 RF initialization failed!");
+        while (1);
+    }
+
+    if (!driver1.init()) {
+        Serial.println("Driver 2 RF initialization failed!");
+        while (1);
+    }
+}
+
+void loop() {
+    uint8_t buf[20];
+    uint8_t buflen = sizeof(buf);
+
+    uint8_t buf1[20];
+    uint8_t buflen1 = sizeof(buf1);
+
+    digitalWrite(LED_FULL_PIN, LOW);
+    digitalWrite(LED_EMPTY_PIN, LOW);
+
+    if (driver.recv(buf, &buflen)) {
+        buf[buflen] = 0; // Null-terminate the string
+        int waterLevelPercentage;
+        sscanf((char *)buf, "%d", &waterLevelPercentage);
+
+        Serial.print("Water Level: ");
+        Serial.print(waterLevelPercentage);
+        Serial.println("%");
+
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Water : ");
+        lcd.print(waterLevelPercentage);
+        lcd.print(" %");
+
+        if (waterLevelPercentage >= FULL_LEVEL) {
+            digitalWrite(LED_FULL_PIN, HIGH);
+        }
+
+        if (waterLevelPercentage > 0 && waterLevelPercentage <= LOW_LEVEL_THRESHOLD) {
+            digitalWrite(LED_EMPTY_PIN, HIGH);
+        }
+
+        delay(DELAY_TIME);
+    } else {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print(DISCONNECTED_MSG);
+        delay(DELAY_TIME);
+    }
+
+    if (driver1.recv(buf1, &buflen1)) {
+        buf1[buflen1] = 0; // Null-terminate the string
+        int flowRate;
+        sscanf((char *)buf1, "%d", &flowRate);
+
+        lcd.setCursor(0, 1);
+        lcd.print("Flow Rate : ");
+        lcd.print(flowRate);
+        lcd.print(" %");
+
+        delay(DELAY_TIME);
+    } else {
+        lcd.setCursor(0, 1);
+        lcd.print(RATE_DEAD_MSG);
+        delay(DELAY_TIME);
+    }
+}
+```
+#
