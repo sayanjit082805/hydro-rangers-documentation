@@ -1,6 +1,6 @@
 {
   "index": "Introduction",
-  "documentation": "Documentation",
+  "doc": "Documentation",
   "about": {
     "title": "About",
     "type": "page"
