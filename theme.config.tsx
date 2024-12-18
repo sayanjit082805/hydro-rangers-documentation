@@ -1,6 +1,7 @@
 import React from "react";
 import { DocsThemeConfig } from "nextra-theme-docs";
 import { useRouter } from "next/router";
+import Image from "next/image";
 
 const config: DocsThemeConfig = {
   useNextSeoProps() {
@@ -11,12 +12,19 @@ const config: DocsThemeConfig = {
       }
     }
   },
-  logo: <span>Hydro Rangers</span>,
+  logo: (
+    <>
+      <Image src='/water.svg' alt="logo" width={32} height={32}/>  
+      <span style={{ marginLeft: '.4em', fontWeight: 750, fontSize: 20 }}>
+       Hydro Rangers
+      </span>
+    </>
+  ),
   project: {
     link: "https://github.com/sayanjit082805/hydro-rangers-documentation",
   },
-  chat: {
-    link: "https://discord.com",
+  sidebar: {
+    toggleButton: true,
   },
   docsRepositoryBase:
     "https://github.com/sayanjit082805/hydro-rangers-documentation/blob/main",
