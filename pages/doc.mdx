@@ -147,24 +147,30 @@ void setup() {
   }
   // Set the flow sensor pin as input
   pinMode(FLOW_SENSOR_PIN, INPUT);
-
+  
   // Attach interrupt to the flow sensor pin (counts pulses on the rising edge)
   attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, RISING);
 }
 
 void loop() {
   unsigned long currentMillis = millis();
-
+  
   // Every 1 second, calculate the flow rate
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
+    
+    // Safely copy and reset pulse count
+    noInterrupts();
+    int pulseCountCopy = pulseCount;
+    pulseCount = 0;
+    interrupts();
 
     // Calculate flow rate in liters per minute
-    flowRate = (pulseCount / calibrationFactor);  // Simple calculation for flow in L/min
-    pulseCount = 0;  // Reset pulse count for the next interval
-
+    flowRate = (pulseCountCopy * 1.0) / calibrationFactor;
+    
+    // Prepare data to send via RF module
     char data[20];
-    sprintf(data, "%d", flowRate);
+    sprintf(data, "%.2f", flowRate); // Format float to two decimal places
 
     driver.send((uint8_t *)data, strlen(data));
     driver.waitPacketSent();
@@ -173,10 +179,9 @@ void loop() {
     Serial.print("Flow rate: ");
     Serial.print(flowRate);
     Serial.println(" L/min");
-
-    delay(100);
   }
 }
+
 ```
 ### Receiver
 
